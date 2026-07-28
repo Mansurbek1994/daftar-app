@@ -53,19 +53,6 @@
     border-bottom:2px solid var(--ink);
     position:relative;
   }
-  header .tab{
-    position:absolute;
-    top:-10px;
-    left:22px;
-    background:var(--coin);
-    color:var(--card);
-    font-size:11px;
-    letter-spacing:2px;
-    text-transform:uppercase;
-    padding:4px 10px;
-    border-radius:0 0 6px 6px;
-    font-family: 'Manrope', sans-serif;
-  }
   h1{
     font-size:26px;
     margin:8px 0 2px;
@@ -536,7 +523,6 @@
 <body>
 <div class="phone">
   <header>
-    <div class="tab">Money Cash</div>
     <div class="header-icons">
       <button class="icon-btn" onclick="openCalendar()">📅</button>
       <button class="icon-btn" onclick="openCalculator()">🧮</button>
@@ -547,7 +533,7 @@
     <div class="income-row">
       <label>Oylik daromad</label>
 
-      <input type="number" id="incomeInput" placeholder="0" inputmode="decimal">
+      <input type="text" id="incomeInput" placeholder="0" inputmode="decimal">
       <span>soʻm ×1000</span>
     </div>
   </header>
@@ -570,7 +556,7 @@
     <div class="title">Yangi xarajat</div>
     <div class="cat-grid" id="catGrid"></div>
     <div class="field-row">
-      <input type="number" id="sumInput" placeholder="Summa (ming soʻm)" inputmode="decimal">
+      <input type="text" id="sumInput" placeholder="Summa (ming soʻm)" inputmode="decimal">
     </div>
     <div class="field-row">
       <input type="text" id="noteInput" placeholder="Izoh (ixtiyoriy)">
@@ -702,10 +688,11 @@ function toggleDarkMode(){
 
 async function loadState(){
   try{
-    const res = await window.storage.get(STORAGE_KEY);
-    if(res && res.value){
-      state = JSON.parse(res.value);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      state = JSON.parse(raw);
       if(typeof state.dark !== 'boolean') state.dark = false;
+      if(!Array.isArray(state.expenses)) state.expenses = [];
     }
   }catch(e){
     // no data yet
@@ -716,7 +703,7 @@ async function loadState(){
 
 async function saveState(){
   try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }catch(e){
     console.error('Saqlashda xatolik', e);
   }
@@ -738,10 +725,32 @@ function fmt(n){
   return Math.round(n).toLocaleString('ru-RU').replace(/,/g,' ');
 }
 
+function parseFormattedNumber(str){
+  const cleaned = String(str || '').replace(/\s/g, '').replace(',', '.');
+  return parseFloat(cleaned);
+}
+
+function formatInputLive(el){
+  const cursorFromEnd = el.value.length - el.selectionStart;
+  let raw = el.value.replace(/[^\d.,]/g, '');
+  raw = raw.replace(',', '.');
+  const firstDot = raw.indexOf('.');
+  if(firstDot !== -1){
+    raw = raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, '');
+  }
+  let [intPart, decPart] = raw.split('.');
+  intPart = intPart.replace(/^0+(?=\d)/, '');
+  const formattedInt = intPart ? Number(intPart).toLocaleString('ru-RU').replace(/,/g, ' ') : '';
+  const newValue = decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt;
+  el.value = newValue;
+  const pos = Math.max(0, newValue.length - cursorFromEnd);
+  el.setSelectionRange(pos, pos);
+}
+
 function addExpense(){
   const sumInput = document.getElementById('sumInput');
   const noteInput = document.getElementById('noteInput');
-  const amount = parseFloat(sumInput.value);
+  const amount = parseFormattedNumber(sumInput.value);
   if(!amount || amount <= 0) return;
   state.expenses.unshift({
     id: Date.now(),
@@ -764,7 +773,7 @@ function deleteExpense(id){
 }
 
 function onIncomeChange(){
-  const val = parseFloat(document.getElementById('incomeInput').value);
+  const val = parseFormattedNumber(document.getElementById('incomeInput').value);
   state.income = val || 0;
   saveState();
   render();
@@ -805,7 +814,10 @@ function drawDonut(totals, totalSpent){
 }
 
 function render(){
-  document.getElementById('incomeInput').value = state.income || '';
+  const incomeEl = document.getElementById('incomeInput');
+  if(document.activeElement !== incomeEl){
+    incomeEl.value = state.income ? fmt(state.income) : '';
+  }
   const totals = catTotals();
   const totalSpent = Object.values(totals).reduce((a,b)=>a+b,0);
   const balance = (state.income || 0) - totalSpent;
@@ -1043,7 +1055,8 @@ function renderStats(){
   trendEl.innerHTML = trendHtml;
 }
 
-document.getElementById('incomeInput').addEventListener('input', onIncomeChange);
+document.getElementById('incomeInput').addEventListener('input', (e) => { formatInputLive(e.target); onIncomeChange(); });
+document.getElementById('sumInput').addEventListener('input', (e) => formatInputLive(e.target));
 buildCatGrid();
 loadState();
 
@@ -1208,7 +1221,9 @@ function calcSign(){
 
 function calcUseResult(){
   if(calcOperation !== null) calcEquals();
-  document.getElementById('sumInput').value = calcCurrent;
+  const sumEl = document.getElementById('sumInput');
+  sumEl.value = calcCurrent;
+  formatInputLive(sumEl);
   closeModal('calcOverlay');
 }
 </script>
